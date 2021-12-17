@@ -9,9 +9,23 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	try
 	{
 		wmicpp::Initialized wc;
-		wmicpp::WbemNamespace services(L"ROOT\\CIMV2");
+		wmicpp::WbemNamespace cimv2(L"ROOT\\CIMV2");
 
-		for (auto obj : services.GetObjects(L"Win32_BaseBoard"))
+		for (auto obj : cimv2.GetObjects(L"Win32_BaseBoard"))
+		{
+			variant_t value;
+			obj->Get(L"Manufacturer", 0, &value, nullptr, nullptr);
+			::OutputDebugStringW(value.bstrVal);
+			::OutputDebugStringW(L" ");
+			obj->Get(L"Product", 0, &value, nullptr, nullptr);
+			::OutputDebugStringW(value.bstrVal);
+			::OutputDebugStringW(L"\r\n");
+		}
+
+		// MSSmBios_RawSMBiosTables
+		wmicpp::WbemNamespace wmi(L"ROOT\\WMI");
+
+		for (auto obj : wmi.GetObjects(L"MSSmBios_RawSMBiosTables"))
 		{
 			variant_t value;
 			obj->Get(L"Manufacturer", 0, &value, nullptr, nullptr);
