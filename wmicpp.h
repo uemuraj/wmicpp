@@ -5,9 +5,13 @@
 #include <wbemidl.h>
 #pragma comment(lib, "wbemuuid.lib")
 
-template<typename T> using com_ptr_t = _com_ptr_t<_com_IIID<T, &__uuidof(T)>>;
+#include <system_error>
 
 #define RAISE_SYSTEM_ERROR(err)	throw std::system_error(err, std::system_category(),  __FILE__ "(" _CRT_STRINGIZE(__LINE__) ")");
+
+template<typename T> using com_ptr_t = _com_ptr_t<_com_IIID<T, &__uuidof(T)>>;
+
+// https://learn.microsoft.com/ja-jp/windows/win32/wmisdk/com-api-for-wmi
 
 namespace wmicpp
 {
@@ -15,6 +19,26 @@ namespace wmicpp
 	{
 		Initialized();
 		~Initialized();
+	};
+
+	class WebmPropertyNames
+	{
+		SAFEARRAY * m_names;
+		BSTR * m_array;
+		ULONG m_count;
+	public:
+		WebmPropertyNames(IWbemClassObject * p);
+		~WebmPropertyNames() noexcept;
+
+		BSTR * begin()
+		{
+			return m_array;
+		}
+
+		BSTR * end()
+		{
+			return m_array + m_count;
+		}
 	};
 
 	class WbemObject_Iteratir

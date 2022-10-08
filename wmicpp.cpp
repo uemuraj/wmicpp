@@ -1,6 +1,5 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <system_error>
 
 #include "wmicpp.h"
 
@@ -49,12 +48,14 @@ namespace wmicpp
 	{
 		com_ptr_t<IEnumWbemClassObject> enumerator;
 
-		if (auto hr = m_services->CreateInstanceEnum(bstr_t("Win32_BaseBoard"), WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr, &enumerator); FAILED(hr))
+		if (auto hr = m_services->CreateInstanceEnum(bstr_t(className), WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr, &enumerator); FAILED(hr))
 		{
 			RAISE_SYSTEM_ERROR(hr);
 		}
-
-		return WbemObjects(enumerator);
+		else
+		{
+			return WbemObjects(enumerator);
+		}
 	}
 
 	WbemObject_Iteratir::WbemObject_Iteratir(IEnumWbemClassObject * p) : m_objects(p)
@@ -82,5 +83,66 @@ namespace wmicpp
 		}
 
 		return *this;
+	}
+
+	WebmPropertyNames::WebmPropertyNames(IWbemClassObject * p) : m_names(nullptr), m_array(nullptr), m_count(0)
+	{
+		if (auto hr = p->GetNames(nullptr, WBEM_FLAG_ALWAYS, nullptr, &m_names); FAILED(hr))
+		{
+			RAISE_SYSTEM_ERROR(hr);
+		}
+
+		try
+		{
+			VARTYPE vt{};
+
+			if (auto hr = ::SafeArrayGetVartype(m_names, &vt); FAILED(hr))
+			{
+				RAISE_SYSTEM_ERROR(hr);
+			}
+
+			if (vt != VT_BSTR)
+			{
+				RAISE_SYSTEM_ERROR(E_UNEXPECTED);
+			}
+
+			LONG lbound{};
+
+			if (auto hr = ::SafeArrayGetLBound(m_names, 1, &lbound); FAILED(hr))
+			{
+				RAISE_SYSTEM_ERROR(hr);
+			}
+
+			LONG ubound{};
+
+			if (auto hr = ::SafeArrayGetUBound(m_names, 1, &ubound); FAILED(hr))
+			{
+				RAISE_SYSTEM_ERROR(hr);
+			}
+
+			if (lbound > ubound)
+			{
+				RAISE_SYSTEM_ERROR(E_UNEXPECTED);
+			}
+
+			m_count = ubound - lbound;
+
+			if (auto hr = ::SafeArrayAccessData(m_names, (void **) &m_array); FAILED(hr))
+			{
+				RAISE_SYSTEM_ERROR(hr);
+			}
+		}
+		catch (...)
+		{
+			::SafeArrayDestroy(m_names);
+
+			throw;
+		}
+	}
+
+	WebmPropertyNames::~WebmPropertyNames() noexcept
+	{
+		::SafeArrayUnaccessData(m_names);
+		::SafeArrayDestroy(m_names);
 	}
 }
