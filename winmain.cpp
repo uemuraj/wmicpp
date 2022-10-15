@@ -63,24 +63,32 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 		wmi::Services cimv2(CLSID_WbemLocator, L"ROOT\\CIMV2");
 
-		for (int index = 0; auto obj : cimv2.GetClassObjects(L"Win32_OperatingSystem"))
+		int index = 0;
+
+		for (auto obj : cimv2.GetClassObjects(L"Win32_OperatingSystem"))
 		{
 			Dump(L"Win32_OperatingSystem", index++, obj);
 		}
 
-		for (int index = 0; auto obj : cimv2.GetClassObjects(L"Win32_BaseBoard"))
+		index = 0;
+
+		for (auto obj : cimv2.GetClassObjects(L"Win32_BaseBoard"))
 		{
 			Dump(L"Win32_BaseBoard", index++, obj);
 		}
 
-		for (int index = 0; auto obj : cimv2.GetClassObjects(L"Win32_BIOS"))
+		index = 0;
+
+		for (auto obj : cimv2.GetClassObjects(L"Win32_BIOS"))
 		{
 			Dump(L"Win32_BIOS", index++, obj);
 		}
 
 		wmi::Services serverManager(CLSID_WbemLocator, L"ROOT\\Microsoft\\Windows\\ServerManager");
 
-		for (int index = 0; auto obj : serverManager.GetClassObjects(L"MSFT_ServerFeature"))
+		index = 0;
+
+		for (auto obj : serverManager.GetClassObjects(L"MSFT_ServerFeature"))
 		{
 			Dump(L"MSFT_ServerFeature", index++, obj);
 		}
