@@ -85,9 +85,9 @@ namespace wmicpp
 		return *this;
 	}
 
-	WebmPropertyNames::WebmPropertyNames(IWbemClassObject * p) : m_names(nullptr), m_array(nullptr), m_count(0)
+	WebmPropertyNames::WebmPropertyNames(IWbemClassObject * p) : m_psa(nullptr), m_names(nullptr), m_count(0)
 	{
-		if (auto hr = p->GetNames(nullptr, WBEM_FLAG_ALWAYS, nullptr, &m_names); FAILED(hr))
+		if (auto hr = p->GetNames(nullptr, WBEM_FLAG_ALWAYS, nullptr, &m_psa); FAILED(hr))
 		{
 			RAISE_SYSTEM_ERROR(hr);
 		}
@@ -96,7 +96,7 @@ namespace wmicpp
 		{
 			VARTYPE vt{};
 
-			if (auto hr = ::SafeArrayGetVartype(m_names, &vt); FAILED(hr))
+			if (auto hr = ::SafeArrayGetVartype(m_psa, &vt); FAILED(hr))
 			{
 				RAISE_SYSTEM_ERROR(hr);
 			}
@@ -108,14 +108,14 @@ namespace wmicpp
 
 			LONG lbound{};
 
-			if (auto hr = ::SafeArrayGetLBound(m_names, 1, &lbound); FAILED(hr))
+			if (auto hr = ::SafeArrayGetLBound(m_psa, 1, &lbound); FAILED(hr))
 			{
 				RAISE_SYSTEM_ERROR(hr);
 			}
 
 			LONG ubound{};
 
-			if (auto hr = ::SafeArrayGetUBound(m_names, 1, &ubound); FAILED(hr))
+			if (auto hr = ::SafeArrayGetUBound(m_psa, 1, &ubound); FAILED(hr))
 			{
 				RAISE_SYSTEM_ERROR(hr);
 			}
@@ -127,14 +127,14 @@ namespace wmicpp
 
 			m_count = ubound - lbound;
 
-			if (auto hr = ::SafeArrayAccessData(m_names, (void **) &m_array); FAILED(hr))
+			if (auto hr = ::SafeArrayAccessData(m_psa, (void **) &m_names); FAILED(hr))
 			{
 				RAISE_SYSTEM_ERROR(hr);
 			}
 		}
 		catch (...)
 		{
-			::SafeArrayDestroy(m_names);
+			::SafeArrayDestroy(m_psa);
 
 			throw;
 		}
@@ -142,7 +142,7 @@ namespace wmicpp
 
 	WebmPropertyNames::~WebmPropertyNames() noexcept
 	{
-		::SafeArrayUnaccessData(m_names);
-		::SafeArrayDestroy(m_names);
+		::SafeArrayUnaccessData(m_psa);
+		::SafeArrayDestroy(m_psa);
 	}
 }

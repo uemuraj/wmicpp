@@ -7,11 +7,14 @@
 
 #include "wmicpp.h"
 
+// https://github.com/jim-dale/MountISO.Wmi/blob/main/src/DiskImageManager.h
+// TODO: ISO ファイルのマウント／アンマウントができるか？
+
 void Dump(const wchar_t * className, int index, IWbemClassObject * obj)
 {
 	std::wostringstream out;
 
-	wmicpp::WebmPropertyNames names(obj);
+	wmi::PropertyNames names(obj);
 
 	for (auto & name : names)
 	{
@@ -19,7 +22,7 @@ void Dump(const wchar_t * className, int index, IWbemClassObject * obj)
 
 		if (auto hr = obj->Get(name, 0, &value, nullptr, nullptr); FAILED(hr))
 		{
-			RAISE_SYSTEM_ERROR(hr);
+			throw std::system_error(hr, wmi::wbem_category(), __FUNCTION__);
 		}
 
 		out.str(L"");
@@ -58,22 +61,28 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	{
 		std::locale::global(std::locale(""));
 
-		wmicpp::Initialized wc;
-		wmicpp::WbemNamespace cimv2(L"ROOT\\CIMV2");
+		wmi::Services cimv2(CLSID_WbemLocator, L"ROOT\\CIMV2");
 
-		for (int index = 0; auto obj : cimv2.GetObjects(L"Win32_OperatingSystem"))
+		for (int index = 0; auto obj : cimv2.GetClassObjects(L"Win32_OperatingSystem"))
 		{
 			Dump(L"Win32_OperatingSystem", index++, obj);
 		}
 
-		for (int index = 0; auto obj : cimv2.GetObjects(L"Win32_BaseBoard"))
+		for (int index = 0; auto obj : cimv2.GetClassObjects(L"Win32_BaseBoard"))
 		{
 			Dump(L"Win32_BaseBoard", index++, obj);
 		}
 
-		for (int index = 0; auto obj : cimv2.GetObjects(L"Win32_BIOS"))
+		for (int index = 0; auto obj : cimv2.GetClassObjects(L"Win32_BIOS"))
 		{
 			Dump(L"Win32_BIOS", index++, obj);
+		}
+
+		wmi::Services serverManager(CLSID_WbemLocator, L"ROOT\\Microsoft\\Windows\\ServerManager");
+
+		for (int index = 0; auto obj : serverManager.GetClassObjects(L"MSFT_ServerFeature"))
+		{
+			Dump(L"MSFT_ServerFeature", index++, obj);
 		}
 
 		return 0;
