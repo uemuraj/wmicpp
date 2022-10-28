@@ -3,6 +3,7 @@
 #include <comdef.h>
 #include <wbemidl.h>
 
+#include <functional>
 #include <string_view>
 #include <system_error>
 
@@ -98,7 +99,7 @@ namespace wmi
 		{
 			com_ptr_t<IEnumWbemClassObject> enumerator;
 
-			if (auto hr = m_services->CreateInstanceEnum(m_className, WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr, &enumerator); FAILED(hr))
+			if (auto hr = m_services->CreateInstanceEnum(m_className, WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_USE_AMENDED_QUALIFIERS/*WBEM_FLAG_RETURN_IMMEDIATELY*/, nullptr, &enumerator); FAILED(hr))
 			{
 				throw std::system_error(hr, wbem_category(), __FUNCTION__);
 			}
@@ -109,6 +110,85 @@ namespace wmi
 		IWbemClassObject * end()
 		{
 			return nullptr;
+		}
+	};
+
+
+	class WbemObjectSink : public IWbemObjectSink
+	{
+		unsigned long m_count;
+		HANDLE m_event;
+		std::function<void(const wchar_t *, int, IWbemClassObject *)> m_callback;
+
+	public:
+		WbemObjectSink(std::function<void(const wchar_t *, int, IWbemClassObject *)> callback) : m_count(0), m_event(::CreateEvent(nullptr, true, false, nullptr)), m_callback(callback)
+		{
+			if (!m_event)
+			{
+				throw std::system_error(::GetLastError(), std::system_category(), __FUNCTION__);
+			}
+		}
+
+		~WbemObjectSink()
+		{
+			::CloseHandle(m_event);
+		}
+
+		operator HANDLE()
+		{
+			return m_event;
+		}
+
+		STDMETHODIMP_(ULONG) AddRef(void) override
+		{
+			return ::InterlockedIncrement(&m_count);
+		}
+
+		STDMETHODIMP_(ULONG) Release(void) override
+		{
+			auto count = ::InterlockedDecrement(&m_count);
+
+			if (count == 0)
+			{
+				delete this;
+			}
+
+			return count;
+		}
+
+		STDMETHODIMP QueryInterface(REFIID riid, _COM_Outptr_ void ** ppvObject) override
+		{
+			if (riid == __uuidof(IUnknown) || riid == __uuidof(IWbemObjectSink))
+			{
+				AddRef();
+
+				*ppvObject = (IWbemObjectSink *) this;
+
+				return S_OK;
+			}
+			else
+			{
+				*ppvObject = nullptr;
+
+				return E_NOINTERFACE;
+			}
+		}
+
+		STDMETHODIMP Indicate(long lObjectCount, __RPC__in_ecount_full(lObjectCount) IWbemClassObject ** apObjArray) override
+		{
+			for (long index = 0; index < lObjectCount; ++index)
+			{
+				m_callback(L"Callbacl", index, apObjArray[index]);
+			}
+
+			return WBEM_S_NO_ERROR;
+		}
+
+		STDMETHODIMP SetStatus(long lFlags, HRESULT hResult, __RPC__in_opt BSTR strParam, __RPC__in_opt IWbemClassObject * pObjParam) override
+		{
+			::SetEvent(m_event);
+
+			return WBEM_S_NO_ERROR;
 		}
 	};
 
@@ -169,6 +249,11 @@ namespace wmi
 			}
 		}
 
+		operator IWbemServices *()
+		{
+			return m_services;
+		}
+
 		com_ptr_t<IWbemClassObject> GetClassObject(const wchar_t * className)
 		{
 			com_ptr_t<IWbemClassObject> object;
@@ -186,16 +271,18 @@ namespace wmi
 			return ClassObjects(m_services, className);
 		}
 
-		com_ptr_t<IWbemClassObject> InvokeMethod(const wchar_t * objectPath, const wchar_t * methodName, IWbemClassObject * inParams)
+		void QueryObjects(const wchar_t * wql, std::function<void(const wchar_t *, int, IWbemClassObject *)> callback)
 		{
-			com_ptr_t<IWbemClassObject> outParams;
+			auto sink = new (std::nothrow) WbemObjectSink(callback);
 
-			if (auto hr = m_services->ExecMethod(bstr_t(objectPath), bstr_t(methodName), 0, nullptr, inParams, &outParams, nullptr); FAILED(hr))
+			com_ptr_t<IWbemObjectSink> handler(sink);
+
+			if (auto hr = m_services->ExecQueryAsync(bstr_t("WQL"), bstr_t(wql), WBEM_FLAG_USE_AMENDED_QUALIFIERS, nullptr, handler); FAILED(hr))
 			{
 				throw std::system_error(hr, wbem_category(), __FUNCTION__);
 			}
 
-			return outParams;
+			::WaitForSingleObject(*sink, INFINITE);
 		}
 	};
 
@@ -209,6 +296,11 @@ namespace wmi
 		return VT_BSTR;
 	}
 
+	template<>
+	constexpr VARTYPE GetVarType<IUnknown *>()
+	{
+		return VT_UNKNOWN;
+	}
 
 	template<typename T>
 	ULONG SafeArrayAccessDataFunc(SAFEARRAY * psa, T ** ppv)
@@ -305,24 +397,25 @@ namespace wmi
 
 	class Method
 	{
+		com_ptr_t<IWbemServices> m_service;
+		com_ptr_t<IWbemClassObject> m_object;
 		com_ptr_t<IWbemClassObject> m_method;
 
+		bstr_t m_className;
+		bstr_t m_methodName;
+
 	public:
-		Method(IWbemClassObject * object, const wchar_t * name)
+		Method(IWbemServices * service, const wchar_t * clazz, const wchar_t * method) : m_service(service), m_className(clazz), m_methodName(method)
 		{
-			if (auto hr = object->GetMethod(name, 0, &m_method, nullptr); FAILED(hr))
+			if (auto hr = m_service->GetObject(m_className, 0, nullptr, &m_object, nullptr); FAILED(hr))
+			{
+				throw std::system_error(hr, wbem_category(), __FUNCTION__);
+			}
+
+			if (auto hr = m_object->GetMethod(m_methodName, 0, &m_method, nullptr); FAILED(hr))
 			{
 				throw std::system_error(hr, wmi::wbem_category(), __FUNCTION__);
 			}
-		}
-
-		Method(IWbemClassObject * method) : m_method(method)
-		{
-		}
-
-		IWbemClassObject *operator->()
-		{
-			return m_method;
 		}
 
 		void SetProperty(const wchar_t * name, variant_t && value)
@@ -331,6 +424,32 @@ namespace wmi
 			{
 				throw std::system_error(hr, wmi::wbem_category(), __FUNCTION__);
 			}
+		}
+
+		com_ptr_t<IWbemClassObject> Exec()
+		{
+			com_ptr_t<IWbemClassObject> outParams;
+
+			if (auto hr = m_service->ExecMethod(m_className, m_methodName, 0, nullptr, m_method, &outParams, nullptr); FAILED(hr))
+			{
+				throw std::system_error(hr, wbem_category(), __FUNCTION__);
+			}
+
+			return outParams;
+		}
+
+		void Exec(std::function<void(const wchar_t *, int, IWbemClassObject *)> callback)
+		{
+			auto sink = new (std::nothrow) WbemObjectSink(callback);
+
+			com_ptr_t<IWbemObjectSink> handler(sink);
+
+			if (auto hr = m_service->ExecMethodAsync(m_className, m_methodName, 0, nullptr, m_method, handler); FAILED(hr))
+			{
+				throw std::system_error(hr, wbem_category(), __FUNCTION__);
+			}
+
+			::WaitForSingleObject(*sink, INFINITE);
 		}
 	};
 
